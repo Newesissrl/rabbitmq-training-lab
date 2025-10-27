@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rabbitmq-test
+  namespace: default
+  labels:
+    app: rabbitmq-test
+spec:
+  containers:
+  - name: test-container
+    image: python:3.11-slim
+    command: ["/bin/bash"]
+    args: ["-c", "pip install pika && sleep 3600"]
+    env:
+    - name: RABBITMQ_USERNAME
+      value: "admin"
+    - name: RABBITMQ_PASSWORD
+      value: "killercoda123"
+    - name: RABBITMQ_HOST
+      value: "rabbitmq-cluster"
+    - name: RABBITMQ_PORT
+      value: "5672"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+  restartPolicy: Always
+
+---
+# Alternative test pod with pre-installed pika
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rabbitmq-test-ready
+  namespace: default
+  labels:
+    app: rabbitmq-test-ready
+spec:
+  initContainers:
+  - name: install-pika
+    image: python:3.11-slim
+    command: ["/bin/bash"]
+    args: ["-c", "pip install pika && cp -r /usr/local/lib/python3.11/site-packages/* /shared/"]
+    volumeMounts:
+    - name: shared-libs
+      mountPath: /shared
+  containers:
+  - name: test-container
+    image: python:3.11-slim
+    command: ["/bin/bash"]
+    args: ["-c", "export PYTHONPATH=/shared:$PYTHONPATH && sleep 3600"]
+    env:
+    - name: RABBITMQ_USERNAME
+      value: "admin"
+    - name: RABBITMQ_PASSWORD
+      value: "killercoda123"
+    - name: RABBITMQ_HOST
+      value: "rabbitmq-cluster"
+    - name: RABBITMQ_PORT
+      value: "5672"
+    volumeMounts:
+    - name: shared-libs
+      mountPath: /shared
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+  volumes:
+  - name: shared-libs
+    emptyDir: {}
+  restartPolicy: Always

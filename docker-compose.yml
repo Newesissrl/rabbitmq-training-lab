@@ -1,0 +1,23 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4.1.4-management-alpine
+    hostname: rabbitmq
+    ports:
+      - ${RABBITMQ_PORT:-5672}:5672
+      - ${RABBITMQ_PORT_UI:-15672}:15672
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+    networks:
+      - rabbitmq_net   # <-- custom network for RabbitMQ and PerfTest
+
+volumes:
+  rabbitmq_data:
+    driver: local
+
+networks:
+  rabbitmq_net:       # <-- defined here for reuse
+    name: rabbitmq_net
+    driver: bridge

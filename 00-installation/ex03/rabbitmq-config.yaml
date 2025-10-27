@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-rabbitmq-config
+  namespace: default
+data:
+  rabbitmq.conf: |
+    # Custom RabbitMQ Configuration for Kubernetes
+    
+    # Logging
+    log.console = true
+    log.console.level = info
+    log.file = false
+    
+    # Network
+    listeners.tcp.default = 5672
+    management.tcp.port = 15672
+    management.tcp.ip = 0.0.0.0
+    
+    # Memory and Disk (optimized for Killercoda)
+    vm_memory_high_watermark.relative = 0.7
+    disk_free_limit.relative = 1.0
+    
+    # Cluster formation for Kubernetes
+    cluster_formation.peer_discovery_backend = k8s
+    cluster_formation.k8s.host = kubernetes.default.svc.cluster.local
+    cluster_formation.k8s.address_type = hostname
+    cluster_formation.node_cleanup.interval = 30
+    cluster_formation.node_cleanup.only_log_warning = true
+    
+    # Cluster partition handling
+    cluster_partition_handling = autoheal
+    
+    # Queue settings
+    queue_master_locator = min-masters
+    
+    # Default user settings (will be overridden by operator)
+    default_vhost = /
+    default_user_tags.administrator = true
+    default_permissions.configure = .*
+    default_permissions.read = .*
+    default_permissions.write = .*
+    
+    # High availability
+    ha_promote_on_shutdown = when_synced
+    ha_promote_on_failure = when_synced
+    
+    # Performance tuning for small environments
+    channel_max = 2047
+    connection_max = 1000
+    heartbeat = 60
+    
+    # Management UI settings
+    management.rates_mode = basic
+    
+  enabled_plugins: |
+    [rabbitmq_management,
+     rabbitmq_peer_discovery_k8s,
+     rabbitmq_prometheus].
+
+---
+# RBAC for RabbitMQ peer discovery
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rabbitmq-cluster
+  namespace: default
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: rabbitmq-cluster
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["endpoints"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rabbitmq-cluster
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: rabbitmq-cluster
+  namespace: default
+roleRef:
+  kind: Role
+  name: rabbitmq-cluster
+  apiGroup: rbac.authorization.k8s.io

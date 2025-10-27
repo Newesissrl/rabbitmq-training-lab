@@ -1,0 +1,126 @@
+services:
+  rabbit-1:
+    #USE BUILD TO CREATE IMAGE FROM DOCKERFILE
+    build: .
+    #USE IMAGE TO PULL DIRECTLY THE IMAGE FROM THE REGISTRY
+    #image: rabbitmq:3.13.7-management
+    hostname: rabbit-1
+    container_name: rabbitmq-cluster-node-1
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: cluster123
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbit1-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    networks:
+      - rabbitmq-cluster
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  rabbit-2:
+    #USE BUILD TO CREATE IMAGE FROM DOCKERFILE
+    build: .
+    #USE IMAGE TO PULL DIRECTLY THE IMAGE FROM THE REGISTRY
+    #image: rabbitmq:3.13.7-management
+    hostname: rabbit-2
+    container_name: rabbitmq-cluster-node-2
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: cluster123
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - rabbit2-data:/var/lib/rabbitmq
+      - ./rabbitmq-minimal.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    networks:
+      - rabbitmq-cluster
+    depends_on:
+      rabbit-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: >
+      bash -c "
+        rabbitmq-server &
+        sleep 30 &&
+        rabbitmqctl stop_app &&
+        rabbitmqctl join_cluster rabbit@rabbit-1 &&
+        rabbitmqctl start_app &&
+        wait
+      "
+
+  rabbit-3:
+    #USE BUILD TO CREATE IMAGE FROM DOCKERFILE
+    build: .
+    #USE IMAGE TO PULL DIRECTLY THE IMAGE FROM THE REGISTRY
+    #image: rabbitmq:3.13.7-management
+    hostname: rabbit-3
+    container_name: rabbitmq-cluster-node-3
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: cluster123
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5674:5672"
+      - "15674:15672"
+    volumes:
+      - rabbit3-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    networks:
+      - rabbitmq-cluster
+    depends_on:
+      rabbit-1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: >
+      bash -c "
+        rabbitmq-server &
+        sleep 45 &&
+        rabbitmqctl stop_app &&
+        rabbitmqctl join_cluster rabbit@rabbit-1 &&
+        rabbitmqctl start_app &&
+        wait
+      "
+
+  haproxy:
+    image: haproxy:2.8-alpine
+    container_name: rabbitmq-lb
+    ports:
+      - "5671:5671"
+      - "8080:8080"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - rabbitmq-cluster
+    depends_on:
+      - rabbit-1
+      - rabbit-2
+      - rabbit-3
+
+volumes:
+  rabbit1-data:
+  rabbit2-data:
+  rabbit3-data:
+
+networks:
+  rabbitmq-cluster:
+    driver: bridge
