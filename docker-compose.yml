@@ -4,6 +4,7 @@ services:
     hostname: rabbitmq
     ports:
       - ${RABBITMQ_PORT:-5672}:5672
+      - ${RABBITMQ_PORT_STREAM:-5552}:5552
       - ${RABBITMQ_PORT_UI:-15672}:15672
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq

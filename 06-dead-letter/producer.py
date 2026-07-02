@@ -1,45 +1,71 @@
 #!/usr/bin/env python3
 import pika
 
+# =============================================================================
+# RABBITMQ CONNECTION SETUP
+# =============================================================================
+# Create connection to RabbitMQ server running on localhost:5672
 connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+# Create a channel for AMQP operations
 channel = connection.channel()
 
-# Declare dead letter exchange
-channel.exchange_declare(exchange='dlx', exchange_type='direct') # test also adding durable=True
+# =============================================================================
+# DEAD LETTER EXCHANGE SETUP
+# =============================================================================
+# Declare dead letter exchange for handling failed/expired messages
+# Messages that can't be processed will be routed here
+channel.exchange_declare(exchange='dlx', exchange_type='direct')
 
-# Declare dead letter queue
-channel.queue_declare(queue='dead_letters') # test also adding durable=True
+# Declare dead letter queue to collect failed messages
+channel.queue_declare(queue='dead_letters')
+# Bind dead letter queue to DLX with routing key 'failed'
 channel.queue_bind(exchange='dlx', queue='dead_letters', routing_key='failed')
 
-# Declare main queue with DLX configuration
+# =============================================================================
+# MAIN QUEUE WITH DEAD LETTER CONFIGURATION
+# =============================================================================
+# Declare main processing queue with dead letter exchange configuration
 channel.queue_declare(
     queue='main_queue',
     arguments={
-        'x-dead-letter-exchange': 'dlx',
-        'x-dead-letter-routing-key': 'failed',
-        'x-message-ttl': 10000  # 10 seconds TTL
+        'x-dead-letter-exchange': 'dlx',        # Send failed messages to DLX
+        'x-dead-letter-routing-key': 'failed',  # Routing key for dead letters
+        'x-message-ttl': 10000                   # 10 seconds TTL - messages expire if not consumed
     }
 )
 
-# Send messages
+# =============================================================================
+# TEST MESSAGES FOR DEAD LETTER SCENARIOS
+# =============================================================================
+# Different messages to demonstrate various dead letter scenarios
 messages = [
-    'Message 1 - will be processed',
-    'Message 2 - will be rejected',
-    'Message 3 - will expire if not consumed',
-    'Message 4 - normal processing'
+    'Message 1 - will be processed',           # Normal processing
+    'Message 2 - will be rejected',            # Will be rejected by consumer
+    'Message 3 - will expire if not consumed', # Will expire due to TTL
+    'Message 4 - normal processing'            # Normal processing
 ]
 
+# Send test messages to main queue
 for i, message in enumerate(messages, 1):
     channel.basic_publish(
-        exchange='',
-        routing_key='main_queue',
-        body=message,
+        exchange='',                                # Default exchange
+        routing_key='main_queue',                  # Main processing queue
+        body=message,                              # Message content
         properties=pika.BasicProperties(
-            delivery_mode=2,  # Persistent
-            message_id=str(i)
+            delivery_mode=2,                       # Make message persistent
+            message_id=str(i)                      # Unique message ID for tracking
         )
     )
     print(f" [x] Sent: {message}")
 
-print("\nMessages sent. Some will expire in 10 seconds if not consumed.")
+# =============================================================================
+# DEAD LETTER SCENARIOS EXPLANATION
+# =============================================================================
+print("\nMessages sent. Dead letter scenarios:")
+print(" - Messages expire in 10 seconds if not consumed (TTL)")
+print(" - Messages containing 'rejected' will be rejected by consumer")
+print(" - Failed messages will be routed to dead_letters queue")
+print(" - Check Web UI to observe message movement")
+
+# Clean up connection
 connection.close()

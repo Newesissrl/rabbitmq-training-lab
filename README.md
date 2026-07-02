@@ -33,18 +33,34 @@ pip install -r requirements.txt
 
 **Using Docker:**
 ```bash
+# RabbitMQ 3 (stable)
 docker run -d --name rabbitmq \
   -p 5672:5672 \
   -p 15672:15672 \
   rabbitmq:3-management
+
+# RabbitMQ 4 (latest)
+docker run -d --name rabbitmq \
+  -p 5672:5672 \
+  -p 15672:15672 \
+  -p 5552:5552 \
+  rabbitmq:4-management
 ```
 
 **Using Podman:**
 ```bash
+# RabbitMQ 3 (stable)
 podman run -d --name rabbitmq \
   -p 5672:5672 \
   -p 15672:15672 \
   rabbitmq:3-management
+
+# RabbitMQ 4 (latest)
+podman run -d --name rabbitmq \
+  -p 5672:5672 \
+  -p 15672:15672 \
+  -p 5552:5552 \
+  rabbitmq:4-management
 ```
 
 ### 4. Access RabbitMQ Management UI
@@ -67,6 +83,8 @@ Open http://localhost:15672 in your browser
 | [08-durability](./08-durability/) | Direct | Persistent vs non-persistent components |
 | [09-exchange-to-exchange](./09-exchange-to-exchange/) | Fanout | Exchange-to-exchange binding for message duplication |
 | [10-shared-queues](./10-shared-queues/) | Default | Shared queues for load balancing and work distribution |
+| [11-streams](./11-streams/) | Streams | RabbitMQ Streams for high-throughput event logs (RabbitMQ 4+ only) |
+| [12-super-streams](./12-super-streams/) | Super Streams | Partitioned streams for horizontal scaling (RabbitMQ 4+ only) |
 | [13-connection-pooling](./13-connection-pooling/) | N/A | Connection pooling and channels vs multiple connections |
 | [14-message-formats](./14-message-formats/) | N/A | Message formats and serialization with MessagePack |
 | [15-perf-test](./15-perf-test/) | N/A | Performance testing with official RabbitMQ PerfTest tool |
