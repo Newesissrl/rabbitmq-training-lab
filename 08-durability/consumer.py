@@ -36,24 +36,24 @@ except Exception as e:
 # =============================================================================
 # NON-DURABLE EXCHANGE VERIFICATION
 # =============================================================================
-# Check if non-durable exchange was lost on server restart
-# Non-durable exchanges should be lost on restart
+# Historically a non-durable exchange disappeared on restart.
+# RabbitMQ 4.3 stores all metadata in Khepri (on disk), so the durable flag of
+# an exchange no longer makes a difference: the exchange is expected to be there.
 # Use separate connection since passive check failures close the channel
 try:
     connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
     channel = connection.channel()
-    # This should fail - non-durable exchange should be lost
     channel.exchange_declare(
-        exchange='temp_exchange',
+        exchange='transient_exchange',
         exchange_type='direct',
         durable=False,
         passive=True  # Only check if exists
     )
-    print(' [❌] temp_exchange survived restart (unexpected!)')
+    print(' [ℹ️] transient_exchange is still there after restart (RabbitMQ 4.3 / Khepri behaviour)')
     connection.close()
 except Exception as e:
-    print(' [✓] temp_exchange was lost on restart (expected)')
-    if 'connection' in locals():
+    print(' [ℹ️] transient_exchange is gone after restart')
+    if 'connection' in locals() and connection.is_open:
         connection.close()
 
 # =============================================================================
@@ -136,19 +136,16 @@ print('\n' + '='*60)
 print(' [!] DURABILITY EXPERIMENT RESULTS:')
 print(' [!] ')
 print(' [!] COMPONENT SURVIVAL:')
-print(' [!] ✅ durable_exchange survived restart (stored on disk)')
-print(' [!] ✅ durable_queue survived restart (stored on disk)')
-print(' [!] ❌ temp_exchange was lost on restart (memory only)')
-print(' [!] ❌ temp_queue was lost on restart (memory only)')
+print(' [!] ✅ durable_exchange and durable_queue survived restart')
+print(' [!] ℹ️  transient_exchange also survived (RabbitMQ 4.3 keeps all metadata in Khepri)')
+print(' [!] ❌ non-durable shared queues cannot even be created on RabbitMQ 4.3')
 print(' [!] ')
 print(' [!] MESSAGE SURVIVAL:')
 print(' [!] ✅ Persistent messages (delivery_mode=2) survived in durable queue')
-print(' [!] ❌ Non-persistent messages (delivery_mode=1) were lost everywhere')
-print(' [!] ❌ Non-persistent messages lost even in durable queue!')
+print(' [!] ❌ Non-persistent messages (delivery_mode=1) were lost even in durable queue!')
 print(' [!] ')
 print(' [!] KEY LEARNINGS:')
-print(' [!] - Component durability (exchange/queue) is independent of message persistence')
-print(' [!] - Both component durability AND message persistence needed for survival')
-print(' [!] - Non-durable components are completely lost on restart')
-print(' [!] - Non-persistent messages are lost regardless of queue durability')
+print(' [!] - Queue durability and message persistence are independent settings')
+print(' [!] - Both a durable queue AND persistent messages are needed for survival')
+print(' [!] - On RabbitMQ 4.3, delivery_mode is what decides if a message survives')
 print('='*60)

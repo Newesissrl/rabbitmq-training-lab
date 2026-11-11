@@ -6,7 +6,7 @@ from rstream import Producer, AMQPMessage
 from rstream._pyamqp.message import Properties
 
 async def main():
-    print(' [*] Simple RabbitMQ Streams Producer (RabbitMQ 4+ required)')
+    print(' [*] Simple RabbitMQ Streams Producer')
     print(' [*] Publishing events to persistent stream')
     print(' [*] To exit press CTRL+C')
     
@@ -56,7 +56,7 @@ async def main():
         
     except Exception as e:
         print(f' [❌] Error: {e}')
-        print(' [!] Make sure RabbitMQ 4+ is running with streams enabled')
+        print(' [!] Make sure RabbitMQ is running with the rabbitmq_stream plugin enabled')
 
 if __name__ == '__main__':
     asyncio.run(main())

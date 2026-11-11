@@ -23,21 +23,23 @@ Demonstrates different message serialization formats in RabbitMQ:
 
 ## Setup
 1. Start RabbitMQ container (see main README)
-2. Install MessagePack:
+2. MessagePack is installed by the repository `requirements.txt`:
    ```bash
-   pip install msgpack
+   pip install -r ../requirements.txt
    ```
 
 ## Exercises
 
 ### Test 1: JSON Serialization
 ```bash
-python json_messages.py
+python json_messages.py            # producer
+python json_messages.py consumer   # consumer (Ctrl+C to stop)
 ```
 
 ### Test 2: MessagePack Serialization
 ```bash
-python msgpack_messages.py
+python msgpack_messages.py            # producer
+python msgpack_messages.py consumer   # consumer (Ctrl+C to stop)
 ```
 
 ### Test 3: Performance Comparison
@@ -45,10 +47,12 @@ python msgpack_messages.py
 python format_comparison.py
 ```
 
-### Test 4: Complex Data Structures
-```bash
-python complex_data.py
-```
+### Test 4: Inspect the Payloads in the Management UI
+1. Run the producers only (default mode): `python json_messages.py` and `python msgpack_messages.py`
+2. In the Management UI open **Queues and Streams** → `json_messages` / `msgpack_messages` → **Get messages**
+3. Compare the payloads: JSON is human readable, MessagePack is shown base64-encoded
+   (binary); the `content_type` property tells consumers how to decode it
+4. Consume them: `python json_messages.py consumer` and `python msgpack_messages.py consumer`
 
 ## Expected Results
 - **JSON:** Readable but larger messages

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import pika
 import time
-import thread6
+import threading
 
 def single_connection_test():
     """Test using single connection for all operations"""

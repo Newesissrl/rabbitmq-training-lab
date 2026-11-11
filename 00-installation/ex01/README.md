@@ -19,11 +19,11 @@ docker run -d \
   -p 15672:15672 \
   -e RABBITMQ_DEFAULT_USER=admin \
   -e RABBITMQ_DEFAULT_PASS=password123 \
-  rabbitmq:4.1.4-management-alpine
+  rabbitmq:4.3-management
 ```
 **Windows:**
 ```cmd
-docker run -d --name rabbitmq-single --hostname rabbitmq -p 5672:5672 -p 15672:15672 -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password123 rabbitmq:4.1.4-management
+docker run -d --name rabbitmq-single --hostname rabbitmq -p 5672:5672 -p 15672:15672 -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=password123 rabbitmq:4.3-management
 ```
 **Or use script:**
 ```bash
@@ -71,7 +71,7 @@ try:
     )
     channel = connection.channel()
     
-    channel.queue_declare(queue='test_queue')
+    channel.queue_declare(queue='test_queue', durable=True)
     channel.basic_publish(
         exchange='',
         routing_key='test_queue',
@@ -104,7 +104,7 @@ try:
     )
     channel = connection.channel()
     
-    channel.queue_declare(queue='test_queue')
+    channel.queue_declare(queue='test_queue', durable=True)
     channel.basic_consume(
         queue='test_queue',
         on_message_callback=callback

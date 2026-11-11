@@ -4,7 +4,9 @@
 Deploy RabbitMQ using the official RabbitMQ Cluster Operator on Kubernetes, designed for Killercoda playground environment.
 
 ## Prerequisites
-- Kubernetes cluster (Killercoda provides this)
+- Kubernetes cluster: on Killercoda use the **Kubernetes playground**
+  (https://killercoda.com/playgrounds/scenario/kubernetes), not the Ubuntu one
+- Internet access from the cluster (the operator and cert-manager are installed from GitHub)
 - kubectl configured
 - Basic understanding of Kubernetes concepts
 
@@ -30,7 +32,17 @@ kubectl get storageclass
 killercoda-setup.cmd
 ```
 
-### 2. Install RabbitMQ Cluster Operator
+### 2. Install cert-manager
+The RabbitMQ Cluster Operator (version 2.20 and later) uses an admission webhook
+whose TLS certificate is issued by **cert-manager**. Without cert-manager the
+operator pod stays in `ContainerCreating`
+(`secret "cluster-operator-webhook-server-cert" not found`).
+```bash
+kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml"
+kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=300s
+```
+
+### 3. Install RabbitMQ Cluster Operator
 ```bash
 # Install the operator
 kubectl apply -f "https://github.com/rabbitmq/cluster-operator/releases/latest/download/cluster-operator.yml"
@@ -42,17 +54,23 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=rabbitmq-cluste
 kubectl get pods -n rabbitmq-system
 ```
 
-### 3. Deploy RabbitMQ Cluster
+### 4. Deploy RabbitMQ Cluster
 ```bash
-# Apply the RabbitMQ cluster configuration
+# Apply the RabbitMQ cluster configuration (RabbitMQ 4.3, 1 replica)
 kubectl apply -f rabbitmq-cluster.yaml
 
 # Wait for cluster to be ready
-kubectl wait --for=condition=Ready rabbitmqcluster/rabbitmq-cluster --timeout=600s
+# (a RabbitmqCluster has the conditions AllReplicasReady, ClusterAvailable,
+#  NoWarnings and ReconcileSuccess - there is no "Ready" condition)
+kubectl wait --for=condition=AllReplicasReady rabbitmqcluster/rabbitmq-cluster --timeout=600s
 
 # Check cluster status
 kubectl get rabbitmqclusters
 kubectl get pods -l app.kubernetes.io/name=rabbitmq-cluster
+
+# Show all conditions (NoWarnings=False explains misconfigurations)
+kubectl get rabbitmqcluster rabbitmq-cluster \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.message}{"\n"}{end}'
 ```
 
 ## Accessing RabbitMQ
@@ -63,8 +81,9 @@ kubectl get pods -l app.kubernetes.io/name=rabbitmq-cluster
 echo "Username: admin"
 echo "Password: killercoda123"
 
-# Note: No operator-generated user is created because we override with RABBITMQ_DEFAULT_USER
-# The operator only creates default user when no custom user is specified
+# Note: the operator still stores a generated user in the secret
+# rabbitmq-cluster-default-user, but because RABBITMQ_DEFAULT_USER/PASS are set
+# in rabbitmq-cluster.yaml, the node is initialised with admin/killercoda123 only.
 
 # Verify only admin user exists
 kubectl exec -it rabbitmq-cluster-server-0 -- rabbitmqctl list_users
@@ -72,26 +91,25 @@ kubectl exec -it rabbitmq-cluster-server-0 -- rabbitmqctl list_users
 
 ### 2. Access Management UI (Killercoda)
 ```bash
-# Killercoda works better with NodePort - use the external service
+# The NodePort service exposes the Management UI on port 31672 of every node
 kubectl get svc rabbitmq-cluster-external
-
-# Get the NodePort for management UI (should be 31672)
-NODE_PORT=$(kubectl get svc rabbitmq-cluster-external -o jsonpath='{.spec.ports[?(@.name=="management")].nodePort}')
-echo "Management UI available at: https://$(hostname -I | awk '{print $1}'):$NODE_PORT"
-
-# Alternative: If NodePort doesn't work, try port-forward
-# kubectl port-forward pod/rabbitmq-cluster-server-0 15672:15672 &
-
-echo "Use admin/killercoda123 for Management UI"
 ```
+In Killercoda open the menu (top right, ☰) → **Traffic / Ports**, enter **31672**
+and click **Access**. Log in with `admin` / `killercoda123`.
+
+Alternative, with a port-forward (bound to all interfaces so that the
+Killercoda proxy can reach it), then open port **15672** in Traffic / Ports:
+```bash
+kubectl port-forward --address 0.0.0.0 service/rabbitmq-cluster 15672:15672 &
+```
+> On your own computer, drop `--address 0.0.0.0` and browse to http://localhost:15672.
 
 ### 3. Port Forward for AMQP
 ```bash
-# Forward AMQP port (for external client connections)
+# Forward AMQP port (for client connections from the Killercoda VM)
 kubectl port-forward service/rabbitmq-cluster 5672:5672 &
 
-# Note: For pod-to-pod communication, use service name 'rabbitmq-cluster:5672'
-echo "AMQP endpoint: rabbitmq-cluster:5672 (internal) or Killercoda URL (external)"
+# Note: for pod-to-pod communication, use the service name 'rabbitmq-cluster:5672'
 ```
 
 ## Testing the Deployment
@@ -126,7 +144,7 @@ connection = pika.BlockingConnection(
     )
 )
 channel = connection.channel()
-channel.queue_declare(queue='k8s_test')
+channel.queue_declare(queue='k8s_test', durable=True)
 channel.basic_publish(exchange='', routing_key='k8s_test', body='Hello from Kubernetes!')
 print('Message sent successfully!')
 connection.close()
@@ -147,7 +165,7 @@ connection = pika.BlockingConnection(
     )
 )
 channel = connection.channel()
-channel.queue_declare(queue='k8s_test')
+channel.queue_declare(queue='k8s_test', durable=True)
 
 method_frame, header_frame, body = channel.basic_get(queue='k8s_test', auto_ack=True)
 if method_frame:
@@ -175,9 +193,6 @@ kubectl exec -it rabbitmq-cluster-server-0 -- rabbitmqctl list_queues
 kubectl exec -it rabbitmq-cluster-server-0 -- rabbitmqctl list_users
 kubectl exec -it rabbitmq-cluster-server-0 -- rabbitmqctl list_user_permissions admin
 
-# Note: No operator-generated user exists in this configuration
-# Only the hardcoded admin user is available
-echo "Only admin user exists (no operator-generated user)"
 ```
 
 ### 2. Monitor Resources
@@ -218,14 +233,27 @@ kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=rabbitmq-cluste
 kubectl get pods -l app.kubernetes.io/name=rabbitmq-cluster
 ```
 
-### 2. Scale Down Cluster
+### 2. Scale Down Cluster (not supported)
 ```bash
-# Scale down to 1 replica
+# Try to scale down to 1 replica
 kubectl patch rabbitmqcluster rabbitmq-cluster --type='merge' -p='{"spec":{"replicas":1}}'
 
-# Monitor scaling down
-kubectl get pods -l app.kubernetes.io/name=rabbitmq-cluster -w
+# The operator refuses: pods stay at 3 and ReconcileSuccess becomes False
+kubectl get rabbitmqcluster rabbitmq-cluster \
+  -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.message}{"\n"}{end}'
+# ReconcileSuccess=False Cluster Scale down not supported; tried to scale cluster from 3 nodes to 1 nodes
+
+# Revert to 3 replicas
+kubectl patch rabbitmqcluster rabbitmq-cluster --type='merge' -p='{"spec":{"replicas":3}}'
 ```
+Removing nodes would remove replicas of quorum queues and members of the Khepri
+metadata store, so the operator does not do it automatically. Removing a node
+is a manual, planned operation (`rabbitmq-queues shrink`, `rabbitmqctl forget_cluster_node`).
+
+> **Killercoda:** each replica requests 768Mi of memory. The playground nodes are
+> small: if new pods stay `Pending`, `kubectl describe pod rabbitmq-cluster-server-2`
+> shows `Insufficient memory`; lower `resources` in `rabbitmq-cluster.yaml`
+> (request and limit must stay equal) or stay at fewer replicas.
 
 ## High Availability Testing
 
@@ -256,15 +284,21 @@ kubectl get pods -l app.kubernetes.io/name=rabbitmq-cluster -o wide -w
 ## Configuration Management
 
 ### 1. Update RabbitMQ Configuration
+`rabbitmq-config.yaml` is a **merge patch** for the RabbitmqCluster: it replaces
+`spec.rabbitmq.additionalConfig` (rabbitmq.conf content). The operator then
+performs a rolling restart of the pods.
 ```bash
-# Create custom configuration
-kubectl apply -f rabbitmq-config.yaml
+# Apply the patch
+kubectl patch rabbitmqcluster rabbitmq-cluster --type merge --patch-file rabbitmq-config.yaml
 
-# Update cluster to use custom config
-kubectl patch rabbitmqcluster rabbitmq-cluster --type='merge' -p='{"spec":{"rabbitmq":{"additionalConfig":"custom-rabbitmq-config"}}}'
+# Watch the rolling restart
+kubectl rollout status statefulset/rabbitmq-cluster-server
 
-# Verify configuration update
-kubectl exec -it rabbitmq-cluster-server-0 -- cat /etc/rabbitmq/rabbitmq.conf
+# Verify configuration update (user-defined config is in 90-userDefinedConfiguration.conf)
+kubectl exec -it rabbitmq-cluster-server-0 -- cat /etc/rabbitmq/conf.d/90-userDefinedConfiguration.conf
+
+# Quorum is now the default queue type
+kubectl exec -it rabbitmq-cluster-server-0 -- rabbitmqctl eval 'rabbit_queue_type:default_alias().'
 ```
 
 ### 2. Plugin Management
@@ -284,8 +318,9 @@ kubectl delete -f test-pod.yaml
 # Delete RabbitMQ cluster
 kubectl delete -f rabbitmq-cluster.yaml
 
-# Delete operator (optional)
+# Delete operator and cert-manager (optional)
 kubectl delete -f "https://github.com/rabbitmq/cluster-operator/releases/latest/download/cluster-operator.yml"
+kubectl delete -f "https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml"
 
 # Stop port forwards
 pkill -f "kubectl port-forward"
@@ -295,6 +330,13 @@ pkill -f "kubectl port-forward"
 
 ### Common Issues
 
+#### Operator pod stuck in ContainerCreating
+```bash
+kubectl describe pod -n rabbitmq-system -l app.kubernetes.io/name=rabbitmq-cluster-operator
+# MountVolume.SetUp failed ... secret "cluster-operator-webhook-server-cert" not found
+# -> cert-manager is missing: install it (step 2), the operator then starts
+```
+
 #### Storage Issues (Killercoda)
 ```bash
 # Check if PVC is bound
@@ -303,7 +345,7 @@ kubectl get pvc
 # If PVC shows "Pending", check storage class
 kubectl get storageclass
 
-# Ensure using correct storage class (local-path for Killercoda)
+# Ensure a default storage class exists (local-path on Killercoda and kind)
 kubectl describe pvc rabbitmq-cluster-server-0
 
 # Check pod events for storage issues

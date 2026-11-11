@@ -6,14 +6,24 @@ from rstream import Producer, AMQPMessage
 from rstream._pyamqp.message import Properties
 
 # =============================================================================
-# RABBITMQ STREAMS PRODUCER (RABBITMQ 4+ REQUIRED)
+# RABBITMQ STREAMS PRODUCER (RABBITMQ 4.3)
 # =============================================================================
 # Streams are append-only logs that persist messages permanently
 # Unlike traditional queues, messages are never deleted after consumption
 # Multiple consumers can read from different offsets independently
 
+# =============================================================================
+# FILTER VALUE EXTRACTOR (server-side filtering)
+# =============================================================================
+# Every message is published with a "filter value" (here: its category).
+# Consumers can then ask the broker to send only the chunks that contain the
+# values they are interested in (see consumer.py --filter).
+async def filter_value_extractor(message: AMQPMessage) -> str:
+    return message.application_properties['category']
+
+
 async def main():
-    print(' [*] RabbitMQ Streams Producer (RabbitMQ 4+ required)')
+    print(' [*] RabbitMQ Streams Producer')
     print(' [*] Publishing events to persistent stream every 2 seconds')
     print(' [*] Messages stored permanently in append-only log')
     print(' [*] To exit press CTRL+C')
@@ -44,7 +54,14 @@ async def main():
         # Uses Stream protocol (port 5552) instead of AMQP (port 5672).
         # load_balancer_mode=True is necessary when running RabbitMQ in Docker to avoid
         # hostname resolution issues.
-        async with Producer('127.0.0.1', port=5552, username='guest', password='guest', load_balancer_mode=True) as producer:
+        async with Producer(
+            '127.0.0.1',
+            port=5552,
+            username='guest',
+            password='guest',
+            load_balancer_mode=True,
+            filter_value_extractor=filter_value_extractor,
+        ) as producer:
             
             # =============================================================================
             # STREAM CREATION
@@ -92,8 +109,8 @@ async def main():
         print('\n [!] Interrupted')
     except Exception as e:
         print(f' [❌] Error: {e}')
-        print(' [!] Make sure you are using RabbitMQ 4+ with streams enabled')
-        print(' [!] Verify rstream library is installed: pip install rstream')
+        print(' [!] Make sure RabbitMQ is running with the rabbitmq_stream plugin enabled')
+        print(' [!] Verify rstream library is installed: pip install -r requirements.txt')
         print(' [!] Check that stream protocol port 5552 is accessible')
 
 # =============================================================================

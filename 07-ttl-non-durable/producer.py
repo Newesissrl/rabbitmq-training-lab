@@ -12,16 +12,31 @@ connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
 channel = connection.channel()
 
 # =============================================================================
-# NON-DURABLE EXCHANGE DECLARATION
+# EXCHANGE AND TEMPORARY QUEUE DECLARATION
 # =============================================================================
-# Declare a NON-DURABLE, auto-delete exchange for temporary messaging
-# This exchange will be lost when RabbitMQ server restarts
+# Exchange used for short-lived data.
 channel.exchange_declare(
-    exchange='temp_exchange',
+    exchange='ttl_exchange',
     exchange_type='direct',
-    durable=False,      # Non-durable - won't survive server restart
-    auto_delete=True    # Auto-delete when no queues bound
+    durable=True
 )
+
+# Temporary queue for ephemeral data.
+# RabbitMQ 4.3 no longer accepts non-durable (transient) queues that are shared
+# between connections. The supported ways to get a "temporary" queue are:
+#   - exclusive=True       -> deleted when the declaring connection closes
+#   - auto_delete=True     -> deleted when its last consumer unsubscribes
+#   - x-expires argument   -> deleted after N ms without consumers/usage
+# Here we use auto_delete so the queue survives until a consumer has attached
+# and then goes away when that consumer stops.
+# The producer declares it too, so messages accumulate (and expire) even
+# before any consumer is started.
+channel.queue_declare(
+    queue='ttl_queue',
+    durable=True,
+    auto_delete=True
+)
+channel.queue_bind(exchange='ttl_exchange', queue='ttl_queue', routing_key='temp_data')
 
 # =============================================================================
 # TEMPORARY MESSAGE TEMPLATES
@@ -47,22 +62,22 @@ try:
         # Select random temporary message template
         message_template = random.choice(messages)
         message = message_template.format(counter)
-        
-        # Send message with TTL (Time-To-Live) expiration
+
+        # Send message with per-message TTL (Time-To-Live)
         channel.basic_publish(
-            exchange='temp_exchange',               # Non-durable exchange
+            exchange='ttl_exchange',               # Exchange for temporary data
             routing_key='temp_data',               # Routing key for temporary data
             body=message,                          # Message content
             properties=pika.BasicProperties(
                 expiration='5000',                 # 5 seconds TTL - message expires if not consumed
-                delivery_mode=1                    # Non-persistent message (faster, less reliable)
+                delivery_mode=1                    # Non-persistent message (faster, lost on restart)
             )
         )
         print(f" [x] Sent (TTL=5s): {message}")
-        
+
         counter += 1
         time.sleep(2)  # Send every 2 seconds (faster than TTL to demonstrate expiration)
-        
+
 except KeyboardInterrupt:
     print('\n [!] Interrupted')
     # Clean up connection

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import asyncio
+import os
+import sys
 from rstream import AMQPMessage
 from rstream.superstream_consumer import SuperStreamConsumer
 from rstream.amqp import amqp_decoder
-from rstream.consumer import MessageContext
+from rstream.consumer import MessageContext, EventContext
+from rstream import OffsetSpecification, OffsetType
 
 # =============================================================================
-# RABBITMQ SUPER STREAMS CONSUMER (RABBITMQ 4+ REQUIRED)
+# RABBITMQ SUPER STREAMS CONSUMER (RABBITMQ 4.3)
 # =============================================================================
 # This consumer uses the high-level SuperStreamConsumer client from the rstream
 # library to consume messages from a partitioned super stream.
@@ -48,21 +51,25 @@ async def main():
                 message_count += 1
                 
                 body = msg.body.decode() if msg.body else 'Empty'
-                customer_id = msg.application_properties.get('customer_id', 'unknown') if msg.application_properties else 'unknown'
-                event_type = msg.application_properties.get('event_type', 'unknown') if msg.application_properties else 'unknown'
-                
+                # rstream returns AMQP strings as bytes (keys and values)
+                props = msg.application_properties or {}
+                def prop(key):
+                    value = props.get(key.encode(), props.get(key, b'unknown'))
+                    return value.decode() if isinstance(value, bytes) else value
+                customer_id = prop('customer_id')
+                event_type = prop('event_type')
+
                 customers_seen.add(customer_id)
-                
-                # Get the partition name from the message context.
-                partition = message_context.consumer.get_stream(message_context.subscriber_name)
-                
+
+                # The message context tells us which partition (stream) the
+                # message came from and its offset inside that partition.
+                partition = message_context.stream
+
                 print(f' [x] Partition {partition} - Message #{message_count}')
                 print(f'     Customer: {customer_id} | Event: {event_type}')
                 print(f'     Content: {body}')
                 print(f'     Customers seen on this consumer: {len(customers_seen)}')
-                
-                if hasattr(msg, 'offset'):
-                    print(f'     Partition Offset: {msg.offset}')
+                print(f'     Partition Offset: {message_context.offset}')
                 print()
 
             # =============================================================================
@@ -70,9 +77,36 @@ async def main():
             # =============================================================================
             # Subscribe to the super stream. The SuperStreamConsumer will handle
             # subscribing to all partitions.
+            # With --sac, every consumer instance joins the same consumer group
+            # ("orders-app") with Single Active Consumer enabled: the broker
+            # then gives each partition to only ONE instance of the group, so
+            # running consumer.py several times spreads the partitions over the
+            # instances. Without --sac, every instance reads every partition.
+            properties = None
+            update_listener = None
+            if '--sac' in sys.argv:
+                properties = {
+                    'single-active-consumer': 'true',
+                    'name': 'orders-app',                   # consumer group name
+                    'super-stream': 'orders_super_stream',  # rebalance partitions across the group
+                }
+                print(' [*] Single Active Consumer enabled (group "orders-app")')
+
+                # Called by the broker when this instance becomes active (or
+                # inactive) for a partition: we answer with the offset to
+                # resume from. A real application would return the last offset
+                # it stored; here we simply continue with new messages.
+                async def update_listener(is_active: bool, event_context: EventContext):
+                    state = 'ACTIVE' if is_active else 'standby'
+                    print(f' [~] {event_context.subscriber_name}: now {state}')
+                    return OffsetSpecification(OffsetType.NEXT, 0)
+
             await consumer.subscribe(
                 callback=on_message,
-                decoder=amqp_decoder
+                decoder=amqp_decoder,
+                properties=properties,
+                consumer_update_listener=update_listener,
+                subscriber_name=f'orders-app-{os.getpid()}'
             )
             
             print(' [✓] Subscribed to super stream "orders_super_stream"')
@@ -86,7 +120,7 @@ async def main():
     except Exception as e:
         print(f' [❌] Error: {e}')
         print(' [!] Troubleshooting steps:')
-        print(' [!] 1. Verify RabbitMQ 4+ is running: docker ps')
+        print(' [!] 1. Verify RabbitMQ is running: docker ps')
         print(' [!] 2. Check stream plugin: docker exec rabbitmq rabbitmq-plugins list | grep stream')
         print(' [!] 3. Check rstream version: pip show rstream')
         print(' [!] 4. Verify port 5552 is exposed: docker port rabbitmq')

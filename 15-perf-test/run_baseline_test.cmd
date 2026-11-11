@@ -3,18 +3,16 @@
 echo 🚀 RabbitMQ Baseline Performance Test
 echo =====================================
 
-REM Ensure network exists
-docker network create rabbitmq_net 2>nul
-
-REM Check if RabbitMQ is running
-docker ps | findstr rabbitmq >nul
+REM Start RabbitMQ 4.3 from the repository docker-compose.yml if it is not running
+docker ps --format "{{.Names}}" | findstr /x rabbitmq >nul
 if errorlevel 1 (
-    echo Starting RabbitMQ...
-    docker run -d --name rabbitmq --network rabbitmq_net -p 5672:5672 -p 15672:15672 rabbitmq:3-management
-    
-    echo Waiting for RabbitMQ to start...
-    timeout /t 30 /nobreak >nul
+    echo Starting RabbitMQ (docker compose^)...
+    docker compose -f "%~dp0..\docker-compose.yml" up -d --wait
 )
+
+REM Make sure the broker is reachable from the PerfTest container
+docker network create rabbitmq_net 2>nul
+docker network connect rabbitmq_net rabbitmq 2>nul
 
 echo Running baseline performance test...
 echo Parameters:

@@ -11,37 +11,28 @@ connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
 channel = connection.channel()
 
 # =============================================================================
-# NON-DURABLE EXCHANGE DECLARATION
+# EXCHANGE AND TEMPORARY QUEUE DECLARATION
 # =============================================================================
-# Declare the same non-durable exchange that the producer uses
-# This exchange will be lost when RabbitMQ server restarts
+# Declare the same exchange and queue as the producer (arguments must match)
 channel.exchange_declare(
-    exchange='temp_exchange',
+    exchange='ttl_exchange',
     exchange_type='direct',
-    durable=False,      # Non-durable - exists only in memory
-    auto_delete=True    # Auto-delete when no queues are bound
+    durable=True
 )
 
-# =============================================================================
-# TEMPORARY QUEUE DECLARATION
-# =============================================================================
-# Declare non-durable, auto-delete queue for temporary message processing
-# This queue has a very short lifecycle - exists only while consumer is active
+# Temporary queue: durable=True is required by RabbitMQ 4.3 for queues shared
+# between connections; auto_delete=True removes the queue as soon as the last
+# consumer unsubscribes.
 channel.queue_declare(
-    queue='temp_queue',
-    durable=False,      # Non-durable - won't survive server restart
-    auto_delete=True,   # Auto-delete when consumer disconnects
-    exclusive=False     # Allow multiple consumers (not exclusive to this connection)
+    queue='ttl_queue',
+    durable=True,
+    auto_delete=True    # Deleted when the last consumer disconnects
 )
 
-# =============================================================================
-# QUEUE BINDING FOR TEMPORARY DATA
-# =============================================================================
-# Bind temporary queue to temporary exchange
-# This binding routes messages with 'temp_data' routing key to our queue
+# Bind temporary queue to the exchange (routing key 'temp_data')
 channel.queue_bind(
-    exchange='temp_exchange',
-    queue='temp_queue',
+    exchange='ttl_exchange',
+    queue='ttl_queue',
     routing_key='temp_data'
 )
 
@@ -76,7 +67,7 @@ channel.basic_qos(prefetch_count=1)
 
 # Set up consumption from temporary queue
 channel.basic_consume(
-    queue='temp_queue',             # Temporary, auto-delete queue
+    queue='ttl_queue',              # Temporary, auto-delete queue
     on_message_callback=callback    # Message processing function
 )
 
@@ -96,6 +87,6 @@ except KeyboardInterrupt:
     # Gracefully stop consuming
     channel.stop_consuming()
     connection.close()
-    print(' [!] Consumer stopped - temp_queue will auto-delete')
+    print(' [!] Consumer stopped - ttl_queue will auto-delete')
     print(' [!] Any unprocessed messages with remaining TTL are lost')
-    print(' [!] Temporary infrastructure cleaned up automatically')
+    print(' [!] Messages published while no queue exists are dropped (unroutable)')

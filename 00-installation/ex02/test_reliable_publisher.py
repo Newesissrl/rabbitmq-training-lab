@@ -284,7 +284,7 @@ def main() -> int:
         pub = ReliablePublisher(AMQP_URL)
     except pika.exceptions.AMQPConnectionError as exc:
         print(f"\nCould not connect to RabbitMQ: {exc}")
-        print("Is the cluster running?  docker-compose up -d")
+        print("Is the cluster running?  docker compose up -d")
         return 1
 
     try:

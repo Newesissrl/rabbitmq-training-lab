@@ -33,8 +33,10 @@ queues = [
 
 # Create and bind each queue with its header matching rules
 for queue_name, binding_args in queues:
-    # Create named queue (not exclusive, persists between connections)
-    channel.queue_declare(queue=queue_name)
+    # Create named, durable queue (not exclusive, persists between connections)
+    # NOTE: RabbitMQ 4.3 rejects non-durable, non-exclusive queues, so a named
+    # queue shared across connections must be declared durable=True.
+    channel.queue_declare(queue=queue_name, durable=True)
     # Bind queue to headers exchange with header matching arguments
     channel.queue_bind(
         exchange='headers_exchange',

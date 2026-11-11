@@ -10,7 +10,7 @@ try:
     )
     channel = connection.channel()
     
-    channel.queue_declare(queue='test_queue')
+    channel.queue_declare(queue='test_queue', durable=True)
     channel.basic_publish(
         exchange='',
         routing_key='test_queue',

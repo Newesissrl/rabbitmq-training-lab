@@ -26,6 +26,11 @@ echo [INFO] Cluster information:
 kubectl cluster-info
 echo.
 
+REM Install cert-manager (required by the Cluster Operator 2.20+ for its webhook certificate)
+echo [INFO] Installing cert-manager...
+kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml"
+kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=300s
+
 REM Install RabbitMQ Cluster Operator
 echo [INFO] Installing RabbitMQ Cluster Operator...
 kubectl apply -f "https://github.com/rabbitmq/cluster-operator/releases/latest/download/cluster-operator.yml"
@@ -40,7 +45,7 @@ echo [INFO] Deploying RabbitMQ cluster...
 kubectl apply -f rabbitmq-cluster.yaml
 
 echo [INFO] Waiting for RabbitMQ cluster to be ready...
-kubectl wait --for=condition=Ready rabbitmqcluster/rabbitmq-cluster --timeout=600s
+kubectl wait --for=condition=AllReplicasReady rabbitmqcluster/rabbitmq-cluster --timeout=600s
 
 echo [SUCCESS] RabbitMQ cluster deployed successfully
 

@@ -39,33 +39,20 @@ channel.queue_bind(
 )
 
 # =============================================================================
-# NON-DURABLE COMPONENTS SETUP (LOST ON SERVER RESTART)
+# NON-DURABLE EXCHANGE (durable=False)
 # =============================================================================
-# Create NON-DURABLE exchange that is lost when RabbitMQ server restarts
-# Non-durable exchanges exist only in memory and are not stored on disk
+# Historically, non-durable exchanges lived only in memory and vanished on
+# restart. Since RabbitMQ 4.x all metadata is stored in Khepri (a Raft-based,
+# on-disk store) and transient entities are being phased out: on RabbitMQ 4.3
+# you will see that this exchange is STILL THERE after a restart.
 channel.exchange_declare(
-    exchange='temp_exchange',
+    exchange='transient_exchange',
     exchange_type='direct',
-    durable=False  # Lost on server restart - exists only in memory
+    durable=False
 )
 
-# Create NON-DURABLE queue that is lost when RabbitMQ server restarts
-# Non-durable queues exist only in memory and are not stored on disk
-channel.queue_declare(
-    queue='temp_queue',
-    durable=False  # Lost on server restart - exists only in memory
-)
-
-# Bind non-durable queue to non-durable exchange
-# Binding is lost on restart because both components are non-durable
-channel.queue_bind(
-    exchange='temp_exchange',
-    queue='temp_queue',
-    routing_key='temp_data'
-)
-
-print(' [✓] Created both durable and non-durable components')
-print(' [*] Sending messages to both exchanges...')
+print(' [✓] Created durable_exchange, durable_queue and transient_exchange')
+print(' [*] Sending persistent and non-persistent messages to durable_queue...')
 
 # =============================================================================
 # PERSISTENT MESSAGES TO DURABLE COMPONENTS
@@ -95,33 +82,6 @@ for i, message in enumerate(persistent_messages, 1):
     print(f" [✓] Sent PERSISTENT to durable_queue: {message}")
 
 # =============================================================================
-# NON-PERSISTENT MESSAGES TO NON-DURABLE COMPONENTS
-# =============================================================================
-# Send NON-PERSISTENT messages to non-durable exchange/queue combination
-# These messages will be LOST on RabbitMQ server restart because:
-# 1. Exchange is non-durable (lost on restart)
-# 2. Queue is non-durable (lost on restart)
-# 3. Messages are non-persistent (delivery_mode=1)
-temp_messages = [
-    'Temporary notification #1',    # Temporary system notification
-    'Cache invalidation #2',        # Cache invalidation message
-    'Session cleanup #3',           # Session cleanup notification
-    'Temporary status #4',          # Temporary status update
-    'Ephemeral event #5'            # Short-lived event notification
-]
-
-for i, message in enumerate(temp_messages, 1):
-    channel.basic_publish(
-        exchange='temp_exchange',           # Non-durable exchange
-        routing_key='temp_data',           # Routing key for non-durable queue
-        body=message,                      # Message content
-        properties=pika.BasicProperties(
-            delivery_mode=1                # Non-persistent message - lost on restart
-        )
-    )
-    print(f" [✓] Sent NON-PERSISTENT to temp_queue: {message}")
-
-# =============================================================================
 # NON-PERSISTENT MESSAGES TO DURABLE COMPONENTS (MIXED SCENARIO)
 # =============================================================================
 # Send NON-PERSISTENT messages to DURABLE queue to demonstrate that
@@ -143,6 +103,25 @@ for message in mixed_messages:
     )
     print(f" [⚠️] Sent NON-PERSISTENT to durable_queue: {message}")
 
+# Clean up connection
+connection.close()
+
+# =============================================================================
+# NON-DURABLE QUEUE: REJECTED BY RABBITMQ 4.3
+# =============================================================================
+# A non-durable, non-exclusive ("transient") queue is a deprecated feature that
+# RabbitMQ 4.3 denies by default. The broker answers with an error and closes
+# the connection, so we try it on a separate connection.
+print(' [*] Trying to declare a non-durable shared queue (temp_queue)...')
+try:
+    probe = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+    probe.channel().queue_declare(queue='temp_queue', durable=False)
+    print(' [⚠️] temp_queue was accepted - transient_nonexcl_queues is permitted on this broker')
+    probe.close()
+except pika.exceptions.AMQPError as e:
+    reason = str(e.args[-1]) if e.args else str(e)
+    print(f' [✓] Rejected by the broker as expected: {reason.splitlines()[0]}')
+
 # =============================================================================
 # DURABILITY EXPERIMENT INSTRUCTIONS
 # =============================================================================
@@ -150,29 +129,22 @@ print('\n' + '='*60)
 print(' [!] DURABILITY EXPERIMENT SETUP COMPLETE')
 print(' [!] ')
 print(' [!] Current state - check Web UI at http://localhost:15672:')
-print(' [!]   - durable_exchange and durable_queue (with 7 messages total)')
+print(' [!]   - durable_queue with 7 messages:')
 print(' [!]     * 5 persistent messages (will survive restart)')
 print(' [!]     * 2 non-persistent messages (will be lost on restart)')
-print(' [!]   - temp_exchange and temp_queue (with 5 messages)')
-print(' [!]     * All non-persistent messages (will be lost on restart)')
+print(' [!]   - transient_exchange (durable=false)')
 print(' [!] ')
 print(' [!] EXPERIMENT STEPS:')
-print(' [!] 1. Verify both exchanges/queues exist in Web UI')
-print(' [!] 2. Note message counts in both queues')
-print(' [!] 3. Stop RabbitMQ: docker stop rabbitmq')
-print(' [!] 4. Start RabbitMQ: docker start rabbitmq')
-print(' [!] 5. Check Web UI again:')
-print(' [!]    - temp_exchange and temp_queue will be GONE')
-print(' [!]    - durable_exchange and durable_queue will remain')
-print(' [!]    - Only 5 persistent messages will survive in durable_queue')
-print(' [!] 6. Run consumer.py to process surviving messages')
+print(' [!] 1. Note the message count of durable_queue (7)')
+print(' [!] 2. Restart RabbitMQ: docker restart rabbitmq')
+print(' [!] 3. Check Web UI again:')
+print(' [!]    - durable_queue only has the 5 persistent messages')
+print(' [!]    - transient_exchange is still listed (RabbitMQ 4.3 / Khepri)')
+print(' [!] 4. Run consumer.py to process surviving messages')
 print(' [!] ')
 print(' [!] LEARNING OBJECTIVES:')
-print(' [!] - Durable components survive server restart')
-print(' [!] - Non-durable components are lost on server restart')
+print(' [!] - Durable queues survive server restart')
 print(' [!] - Message persistence (delivery_mode) is independent of queue durability')
 print(' [!] - Non-persistent messages are lost even in durable queues')
+print(' [!] - RabbitMQ 4.3 rejects non-durable shared queues')
 print('='*60)
-
-# Clean up connection
-connection.close()

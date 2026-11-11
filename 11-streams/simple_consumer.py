@@ -4,7 +4,7 @@ from rstream import Consumer, AMQPMessage
 from rstream.amqp import amqp_decoder
 
 async def main():
-    print(' [*] Simple RabbitMQ Streams Consumer (RabbitMQ 4+ required)')
+    print(' [*] Simple RabbitMQ Streams Consumer')
     print(' [*] Reading from persistent event stream')
     print(' [*] To exit press CTRL+C')
     
@@ -24,10 +24,17 @@ async def main():
             body = msg.body.decode() if msg.body else 'Empty'
             
             # Access standard properties directly from the `properties` object.
+            # rstream returns AMQP strings as bytes, so decode them
             message_id = msg.properties.message_id if msg.properties else 'Unknown'
+            if isinstance(message_id, bytes):
+                message_id = message_id.decode()
             
             # Access custom metadata from the `application_properties` dictionary.
-            category = msg.application_properties.get('category', 'unknown') if msg.application_properties else 'unknown'
+            # (keys and values of application_properties are bytes too)
+            app_props = msg.application_properties or {}
+            category = app_props.get(b'category', app_props.get('category', b'unknown'))
+            if isinstance(category, bytes):
+                category = category.decode()
             
             print(f" [x] Received #{message_count} (ID: {message_id}) [{category}]: {body}")
         
@@ -51,7 +58,7 @@ async def main():
         print(f'\n [!] Interrupted after processing {message_count} messages')
     except Exception as e:
         print(f' [❌] Error: {e}')
-        print(' [!] Make sure RabbitMQ 4+ is running and simple_stream exists')
+        print(' [!] Make sure RabbitMQ is running and simple_stream exists')
         print(' [!] Run simple_producer.py first to create the stream')
     finally:
         if 'consumer' in locals():

@@ -4,59 +4,44 @@ metadata:
   name: rabbitmq-cluster
   namespace: default
 spec:
-  # Number of RabbitMQ nodes
+  # Number of RabbitMQ nodes (scale to 3 later in the exercise)
   replicas: 1
-  
-  # RabbitMQ image configuration
-  image: rabbitmq:4.1.4-management
-  
-  # Resource requirements
+
+  # RabbitMQ image
+  image: rabbitmq:4.3-management
+
+  # Resource requirements, sized for a small training environment.
+  # The operator requires memory request == limit and derives the memory
+  # high watermark from it.
   resources:
     requests:
       cpu: 100m
-      memory: 512Mi
+      memory: 768Mi
     limits:
       cpu: 500m
-      memory: 1Gi
-  
-  # Disable persistence for Killercoda (demo environment)
+      memory: 768Mi
+
+  # Small volume for the demo environment (Killercoda provides the
+  # "local-path" storage class)
   persistence:
-    storage: 0
-  
+    storage: 1Gi
+
   # RabbitMQ configuration
+  # Note: the operator already configures Kubernetes peer discovery, the
+  # management and Prometheus plugins and the default user, so they are not
+  # repeated here.
   rabbitmq:
-    # Additional configuration
     additionalConfig: |
       # Logging
-      log.console = true
       log.console.level = info
-      
-      # Memory settings for small environments
-      vm_memory_high_watermark.relative = 0.8
-      disk_free_limit.relative = 1.0
-      
-      # Cluster settings
-      cluster_formation.peer_discovery_backend = k8s
-      cluster_formation.k8s.host = kubernetes.default.svc.cluster.local
-      cluster_formation.node_cleanup.interval = 30
-      cluster_formation.node_cleanup.only_log_warning = true
-      cluster_partition_handling = autoheal
-      
-      # Queue settings
-      queue_master_locator = min-masters
-    
-    # Enable management plugin and others
-    additionalPlugins:
-      - rabbitmq_management
-      - rabbitmq_peer_discovery_k8s
-      - rabbitmq_prometheus
-  
-  # Service configuration
+
+      # Spread new queue leaders evenly across the nodes
+      queue_leader_locator = balanced
+
+  # Service configuration (in-cluster access)
   service:
     type: ClusterIP
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-type: nlb
-  
+
   # Override default user
   override:
     statefulSet:
@@ -70,17 +55,6 @@ spec:
                 value: "admin"
               - name: RABBITMQ_DEFAULT_PASS
                 value: "killercoda123"
-              # Reduce startup time for demo environment
-              - name: RABBITMQ_SERVER_START_ARGS
-                value: "-rabbit log_levels [{connection,info}]"
-              # Resource limits for Killercoda
-              resources:
-                requests:
-                  cpu: 50m
-                  memory: 128Mi
-                limits:
-                  cpu: 200m
-                  memory: 256Mi
 
 ---
 # Service for external access (NodePort for Killercoda)

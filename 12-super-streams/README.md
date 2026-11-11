@@ -1,4 +1,4 @@
-# Exercise 12: Super Streams - Partitioned Streams (RabbitMQ 4+ Only)
+# Exercise 12: Super Streams - Partitioned Streams
 
 ## Concept
 Super Streams are partitioned streams that enable horizontal scaling:
@@ -8,8 +8,8 @@ Super Streams are partitioned streams that enable horizontal scaling:
 - **Scalability:** Add more partitions to increase throughput
 
 ## Prerequisites
-- **RabbitMQ 4.0+** (Super Streams not available in RabbitMQ 3)
-- **rstream library** with super stream support
+- **RabbitMQ 4.3** with the `rabbitmq_stream` plugin enabled (included in the repository `docker-compose.yml`)
+- **rstream library** with super stream support (installed by `requirements.txt`)
 - **Understanding of Exercise 11** (basic streams)
 
 ## Learning Objectives
@@ -28,19 +28,16 @@ Super Streams are partitioned streams that enable horizontal scaling:
 | **Scaling** | Vertical (faster hardware) | Horizontal (more partitions) |
 | **Ordering** | Global ordering | Per-partition ordering |
 
-## Setup (RabbitMQ 4 Required)
+## Setup
 
-### 1. Start RabbitMQ 4 Container
+### 1. Start RabbitMQ with streams enabled
 ```bash
-# Must use RabbitMQ 4 with super streams support
-docker run -d --name rabbitmq \
-  -p 5672:5672 \
-  -p 15672:15672 \
-  -p 5552:5552 \
-  rabbitmq:4-management
-
-# Enable streams plugin
-docker exec rabbitmq rabbitmq-plugins enable rabbitmq_stream
+# From the repository root: streams plugin + port 5552 included
+docker compose up -d
+```
+If you started RabbitMQ with plain `docker run`, publish port 5552 and run:
+```bash
+docker exec rabbitmq rabbitmq-plugins enable rabbitmq_stream rabbitmq_stream_management
 ```
 
 ### 2. Run Exercise
@@ -69,8 +66,11 @@ python consumer.py
 ## Web UI Monitoring
 Open http://localhost:15672 (guest/guest) and observe:
 
-**Streams Tab:**
-- `orders_super_stream` with multiple partitions
+**Queues and Streams Tab:**
+- Partition streams `orders_super_stream-0/1/2`
+
+**Exchanges Tab:**
+- `orders_super_stream` (type `direct`) routing to the partitions
 - Individual partition statistics
 - Message distribution across partitions
 
@@ -92,8 +92,27 @@ The provided `consumer.py` script demonstrates this pattern. When you run it, a 
 python consumer.py
 ```
 
-### 2. Multiple Processes / Machines (for horizontal scaling)
-To achieve true horizontal scaling, you would run the same `consumer.py` script on multiple different machines or in different containers. The `rstream` library and RabbitMQ handle the coordination, ensuring that different consumer instances process different partitions, thus distributing the load. (Note: The specifics of this coordination are handled by the client library and RabbitMQ server).
+### 2. Multiple Processes / Machines (horizontal scaling with Single Active Consumer)
+Running `python consumer.py` twice makes **both** instances read **all**
+partitions (every message is processed twice). To split the partitions between
+instances, start them with `--sac`:
+
+```bash
+python consumer.py --sac   # Terminal 2 - becomes ACTIVE on all 3 partitions
+python consumer.py --sac   # Terminal 3 - the broker moves one or more partitions here
+```
+
+With `--sac` every instance joins the consumer group `orders-app` with
+**Single Active Consumer** enabled on the super stream. The broker keeps exactly
+one active consumer per partition and rebalances partitions when instances join
+or leave. Watch the `[~] ... now ACTIVE / standby` lines, then stop one instance
+(Ctrl+C) and see the other one take its partitions back.
+
+Inspect the group from the CLI:
+```bash
+docker exec rabbitmq rabbitmq-streams list_stream_group_consumers \
+  --stream orders_super_stream-0 --reference orders-app
+```
 
 ## Real-World Applications
 

@@ -1,24 +1,38 @@
+# Single RabbitMQ 4.3 node used by exercises 01-18.
+#   docker compose up -d        (from the repository root)
+#   docker compose down         (stop, keep data)
+#   docker compose down -v      (stop and delete data)
 services:
   rabbitmq:
-    image: rabbitmq:4.1.4-management-alpine
+    image: rabbitmq:4.3-management
+    container_name: rabbitmq     # exercises use "docker exec/stop/start rabbitmq"
     hostname: rabbitmq
     ports:
-      - ${RABBITMQ_PORT:-5672}:5672
-      - ${RABBITMQ_PORT_STREAM:-5552}:5552
-      - ${RABBITMQ_PORT_UI:-15672}:15672
+      - ${RABBITMQ_PORT:-5672}:5672                # AMQP 0-9-1
+      - ${RABBITMQ_PORT_STREAM:-5552}:5552         # Stream protocol (ex 11-12)
+      - ${RABBITMQ_PORT_UI:-15672}:15672           # Management UI / HTTP API
+      - ${RABBITMQ_PORT_PROMETHEUS:-15692}:15692   # Prometheus metrics (ex 18)
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ./config/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./config/rabbitmq.conf:/etc/rabbitmq/conf.d/20-training.conf:ro
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
     networks:
-      - rabbitmq_net   # <-- custom network for RabbitMQ and PerfTest
+      - rabbitmq_net   # shared with the PerfTest container (ex 15)
 
 volumes:
   rabbitmq_data:
     driver: local
 
 networks:
-  rabbitmq_net:       # <-- defined here for reuse
+  rabbitmq_net:
     name: rabbitmq_net
     driver: bridge

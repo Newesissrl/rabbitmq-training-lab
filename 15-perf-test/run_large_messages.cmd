@@ -4,6 +4,7 @@ echo 📦 RabbitMQ Large Messages Test
 echo ===============================
 
 docker network create rabbitmq_net 2>nul
+docker network connect rabbitmq_net rabbitmq 2>nul
 
 echo Running large messages test...
 echo Parameters:

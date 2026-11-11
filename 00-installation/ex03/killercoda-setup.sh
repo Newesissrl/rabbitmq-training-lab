@@ -56,6 +56,12 @@ print_status "Available storage classes:"
 kubectl get storageclass
 echo ""
 
+# Install cert-manager (required by the Cluster Operator 2.20+ for its webhook certificate)
+print_status "Installing cert-manager..."
+kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml"
+kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=300s
+print_success "cert-manager installed"
+
 # Install RabbitMQ Cluster Operator
 print_status "Installing RabbitMQ Cluster Operator..."
 kubectl apply -f "https://github.com/rabbitmq/cluster-operator/releases/latest/download/cluster-operator.yml"
@@ -75,7 +81,7 @@ print_status "Deploying RabbitMQ cluster..."
 kubectl apply -f rabbitmq-cluster.yaml
 
 print_status "Waiting for RabbitMQ cluster to be ready (this may take a few minutes)..."
-kubectl wait --for=condition=Ready rabbitmqcluster/rabbitmq-cluster --timeout=600s
+kubectl wait --for=condition=AllReplicasReady rabbitmqcluster/rabbitmq-cluster --timeout=600s
 
 print_success "RabbitMQ cluster deployed successfully"
 
@@ -85,12 +91,12 @@ kubectl get rabbitmqclusters
 kubectl get pods -l app.kubernetes.io/name=rabbitmq-cluster
 echo ""
 
-# Get credentials
-print_status "Retrieving credentials..."
-username=$(kubectl get secret rabbitmq-cluster-default-user -o jsonpath='{.data.username}' | base64 --decode)
-password=$(kubectl get secret rabbitmq-cluster-default-user -o jsonpath='{.data.password}' | base64 --decode)
+# Credentials: rabbitmq-cluster.yaml sets RABBITMQ_DEFAULT_USER/PASS, so the
+# admin user is used instead of the operator-generated default user
+username=admin
+password=killercoda123
 
-print_success "Credentials retrieved:"
+print_success "Credentials:"
 echo "  Username: $username"
 echo "  Password: $password"
 echo ""
@@ -106,7 +112,6 @@ print_success "Test pod deployed successfully"
 
 # Test connection
 print_status "Testing RabbitMQ connection..."
-sleep 10  # Give some time for pika to install
 
 # Test producer
 kubectl exec rabbitmq-test -- python3 -c "
@@ -125,7 +130,7 @@ try:
         )
     )
     channel = connection.channel()
-    channel.queue_declare(queue='k8s_test')
+    channel.queue_declare(queue='k8s_test', durable=True)
     channel.basic_publish(exchange='', routing_key='k8s_test', body='Hello from Kubernetes!')
     print('✅ Message sent successfully!')
     connection.close()
@@ -151,7 +156,7 @@ try:
         )
     )
     channel = connection.channel()
-    channel.queue_declare(queue='k8s_test')
+    channel.queue_declare(queue='k8s_test', durable=True)
     
     method_frame, header_frame, body = channel.basic_get(queue='k8s_test', auto_ack=True)
     if method_frame:
@@ -173,8 +178,9 @@ print_status "Setting up port forwarding..."
 pkill -f "kubectl port-forward" 2>/dev/null || true
 
 # Start port forwards in background
-kubectl port-forward service/rabbitmq-cluster 15672:15672 &
-kubectl port-forward service/rabbitmq-cluster 5672:5672 &
+# --address 0.0.0.0 makes the ports reachable from Killercoda's "Traffic / Ports" menu
+kubectl port-forward --address 0.0.0.0 service/rabbitmq-cluster 15672:15672 >/dev/null 2>&1 &
+kubectl port-forward --address 0.0.0.0 service/rabbitmq-cluster 5672:5672 >/dev/null 2>&1 &
 
 sleep 2
 
@@ -183,7 +189,7 @@ echo ""
 echo "🎉 RabbitMQ is now ready to use!"
 echo ""
 echo "📋 Access Information:"
-echo "  Management UI: http://localhost:15672"
+echo "  Management UI: http://localhost:15672 (Killercoda: Traffic / Ports -> 15672, or NodePort 31672)"
 echo "  AMQP Endpoint: localhost:5672"
 echo "  Username: $username"
 echo "  Password: $password"
@@ -202,3 +208,4 @@ echo "🧹 Cleanup:"
 echo "  kubectl delete -f test-pod.yaml"
 echo "  kubectl delete -f rabbitmq-cluster.yaml"
 echo "  kubectl delete -f https://github.com/rabbitmq/cluster-operator/releases/latest/download/cluster-operator.yml"
+echo "  kubectl delete -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml"

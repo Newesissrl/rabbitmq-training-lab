@@ -14,7 +14,7 @@ try:
     )
     channel = connection.channel()
     
-    channel.queue_declare(queue='test_queue')
+    channel.queue_declare(queue='test_queue', durable=True)
     channel.basic_consume(
         queue='test_queue',
         on_message_callback=callback

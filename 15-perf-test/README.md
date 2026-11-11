@@ -1,4 +1,4 @@
-# Exercise 13: Performance Testing with RabbitMQ PerfTest
+# Exercise 15: Performance Testing with RabbitMQ PerfTest
 
 ## Concept
 Uses the official RabbitMQ PerfTest tool to benchmark message throughput:
@@ -20,18 +20,18 @@ Uses the official RabbitMQ PerfTest tool to benchmark message throughput:
 
 ## Setup
 
-### 1. Create Docker Network
+### 1. Start RabbitMQ in the `rabbitmq_net` Network
+The repository `docker-compose.yml` already creates the `rabbitmq_net` network
+and attaches the `rabbitmq` container to it:
 ```bash
-docker network create rabbitmq_net
+# From the repository root
+docker compose up -d
 ```
 
-### 2. Start RabbitMQ in Network
+### 2. (Only if you started RabbitMQ with plain `docker run`)
 ```bash
-docker run -d --name rabbitmq \
-  --network rabbitmq_net \
-  -p 5672:5672 \
-  -p 15672:15672 \
-  rabbitmq:3-management
+docker network create rabbitmq_net
+docker network connect rabbitmq_net rabbitmq
 ```
 
 ### 3. Run Performance Test
@@ -93,6 +93,28 @@ run_many_producers.cmd
 run_large_messages.cmd
 ```
 
+### Scenario 5: Classic vs Quorum Queue
+Quorum queues are the replicated, data-safe queue type of RabbitMQ 4.x. They
+always persist messages, so compare them with persistent messages on a classic
+queue:
+```bash
+# Classic queue, persistent messages
+docker run --rm --network rabbitmq_net pivotalrabbitmq/perf-test:latest \
+  --uri amqp://guest:guest@rabbitmq --producers 5 --consumers 5 \
+  --queue perf-classic --flag persistent --size 1024 --time 60
+
+# Quorum queue
+docker run --rm --network rabbitmq_net pivotalrabbitmq/perf-test:latest \
+  --uri amqp://guest:guest@rabbitmq --producers 5 --consumers 5 \
+  --queue perf-quorum --quorum-queue --flag persistent --size 1024 --time 60
+```
+On a single node, the quorum queue has no replicas to wait for. Run it against the
+3-node cluster of `00-installation/ex02` to see the replication cost.
+Delete `perf-quorum` afterwards (quorum queues are not auto-deleted).
+
+> **Running on Killercoda?** The playground VM is small. Use shorter tests
+> (`--time 60`) and lower rates, and keep `docker stats` open in a second tab.
+
 ## Expected Metrics
 - **Throughput:** Messages per second (target: 2000 msg/s)
 - **Latency:** Message delivery time (typically < 10ms)
@@ -123,10 +145,9 @@ After running tests, analyze:
 
 ## Cleanup
 ```bash
-# Stop containers
-docker stop rabbitmq
-docker rm rabbitmq
+# Delete the test queues that are not auto-deleted
+docker exec rabbitmq rabbitmqctl delete_queue perf-quorum
 
-# Remove network
-docker network rm rabbitmq_net
+# Stop RabbitMQ (from the repository root)
+docker compose down
 ```

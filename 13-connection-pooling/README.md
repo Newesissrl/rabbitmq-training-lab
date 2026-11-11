@@ -43,9 +43,15 @@ python connection_pool.py
 ```
 
 ### Test 4: Performance Comparison
+Each script ends with a summary (total time, throughput, connections, channels).
+Run the three scripts one after the other and compare the summaries:
 ```bash
-python performance_test.py
+for s in single_connection multiple_connections connection_pool; do
+  echo "== $s"; python $s.py | tail -5
+done
 ```
+While a script runs, open the **Connections** and **Channels** tabs of the
+Management UI to see how many TCP connections and channels each approach uses.
 
 ## Expected Results
 - **Single Connection:** Simple but limited concurrency

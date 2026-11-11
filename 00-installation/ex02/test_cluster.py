@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 RabbitMQ Cluster Test Script
-Tests cluster functionality, HA queues, and failover scenarios.
+Tests cluster functionality, quorum queues, and failover scenarios.
 """
 
 import pika
 import time
-import thread6
+import threading
 import sys
 from datetime import datetime
 
@@ -52,8 +52,8 @@ class ClusterTester:
                 print(f"  ❌ {node['name']} ({node['host']}:{node['port']}) - FAILED: {e}")
 
     def create_ha_queue(self):
-        """Create a highly available queue"""
-        print("\n🏗️  Creating HA queue...")
+        """Create a highly available (quorum) queue"""
+        print("\n🏗️  Creating quorum queue...")
 
         try:
             connection = pika.BlockingConnection(
@@ -65,21 +65,20 @@ class ClusterTester:
             )
             channel = connection.channel()
 
-            # Declare HA queue
+            # Declare a quorum queue: the replicated, highly available queue
+            # type of RabbitMQ 4.3.
+            # Its replicas are spread over the cluster nodes automatically.
             channel.queue_declare(
                 queue='ha_test_queue',
                 durable=True,
-                arguments={
-                    'x-ha-policy': 'all',
-                    'x-ha-sync-mode': 'automatic'
-                }
+                arguments={'x-queue-type': 'quorum'}
             )
 
-            print("  ✅ HA queue 'ha_test_queue' created")
+            print("  ✅ Quorum queue 'ha_test_queue' created")
             connection.close()
 
         except Exception as e:
-            print(f"  ❌ Failed to create HA queue: {e}")
+            print(f"  ❌ Failed to create quorum queue: {e}")
 
     def producer_test(self, duration=30):
         """Run producer test for specified duration"""
@@ -119,7 +118,7 @@ class ClusterTester:
             except Exception as e:
                 print(f"  ❌ Producer error: {e}")
 
-        producer_thread = thread6.Thread(target=produce_messages)
+        producer_thread = threading.Thread(target=produce_messages)
         producer_thread.start()
         return producer_thread
 
@@ -157,7 +156,7 @@ class ClusterTester:
             except Exception as e:
                 print(f"  ❌ Consumer error: {e}")
 
-        consumer_thread = thread6.Thread(target=consume_messages)
+        consumer_thread = threading.Thread(target=consume_messages)
         consumer_thread.daemon = True
         consumer_thread.start()
         return consumer_thread
@@ -188,7 +187,7 @@ def main():
         print("\n✅ Cluster test completed!")
         print("\n💡 Next steps:")
         print("  1. Check Management UI: http://localhost:15672")
-        print("  2. Try stopping a node: docker-compose stop rabbit-2")
+        print("  2. Try stopping a node: docker compose stop rabbit-2")
         print("  3. Monitor HAProxy stats: http://localhost:8080/stats")
 
     except KeyboardInterrupt:

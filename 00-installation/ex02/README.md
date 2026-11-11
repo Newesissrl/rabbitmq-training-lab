@@ -22,10 +22,10 @@ Set up a 3-node RabbitMQ cluster using Docker Compose for high availability and 
 ### 1. Start the Cluster
 ```bash
 # Start all nodes
-docker-compose up -d
+docker compose up -d
 
 # Check cluster status
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ### 2. Verify Cluster Formation
@@ -53,17 +53,21 @@ docker exec rabbitmq-cluster-node-1 rabbitmqctl cluster_status
 # List current queues
 docker exec rabbitmq-cluster-node-1 rabbitmqctl list_queues name type
 
-# ❌ DEPRECATED: Classic mirrored queues (RabbitMQ 3.x only - REMOVED in 4.x)
-# docker exec rabbitmq-cluster-node-1 rabbitmqctl set_policy ha-all ".*" '{"ha-mode":"all"}'
-
-# ✅ CURRENT: Create quorum queue via Management API (RabbitMQ 4.x)
+# Create a quorum queue (the replicated, highly available queue type) via the HTTP API
 curl -u admin:cluster123 -X PUT http://localhost:15672/api/queues/%2F/test_quorum \
   -H "Content-Type: application/json" \
   -d '{"durable":true,"arguments":{"x-queue-type":"quorum"}}'
 
 # Verify queue creation
 docker exec rabbitmq-cluster-node-1 rabbitmqctl list_queues name type arguments
+
+# See the leader and followers (replicas) of the quorum queue
+docker exec rabbitmq-cluster-node-1 rabbitmq-queues quorum_status test_quorum
 ```
+
+> Quorum queues replicate every message to a majority of nodes using Raft. With
+> 3 nodes, a quorum queue (and the cluster metadata store, Khepri) keeps working
+> while **one** node is down; with two nodes down it becomes unavailable.
 
 ### Test Failover
 ```bash
@@ -71,20 +75,29 @@ docker exec rabbitmq-cluster-node-1 rabbitmqctl list_queues name type arguments
 python3 -m venv venv
 source venv/bin/activate
 
-# Install pika library
-pip3 install pika
+# Install dependencies
+pip3 install -r ../../requirements.txt
 
 # Create test queue and send messages
 python3 test_cluster.py
 
 # Stop one node and verify messages still flow
-docker-compose stop rabbit-2
+docker compose stop rabbit-2
 
-# Check cluster status
+# Check cluster status (rabbit-2 is listed as a disc node but not running)
 docker exec rabbitmq-cluster-node-1 rabbitmqctl cluster_status
 
+# The quorum queue elected a new leader if needed and is still available
+docker exec rabbitmq-cluster-node-1 rabbitmq-queues quorum_status ha_test_queue
+
 # Restart node
-docker-compose start rabbit-2
+docker compose start rabbit-2
+```
+
+### Test Reliable Publishing
+```bash
+# Publisher confirms + mandatory flag: know that the broker stored AND routed a message
+python3 test_reliable_publisher.py
 ```
 
 ## Load Balancing Test
@@ -123,7 +136,7 @@ docker exec rabbitmq-cluster-node-1 rabbitmqctl status
 ### Queue Distribution
 ```bash
 # Check queue replicas across nodes (for quorum queues)
-docker exec rabbitmq-cluster-node-1 rabbitmqctl list_queues name type arguments
+docker exec rabbitmq-cluster-node-1 rabbitmqctl list_queues name type leader members
 ```
 
 ### Performance Metrics
@@ -150,8 +163,16 @@ docker exec rabbitmq-cluster-node-3 rabbitmqctl stop_app
 docker exec rabbitmq-cluster-node-1 rabbitmqctl forget_cluster_node rabbit@rabbit-3
 
 # Stop container
-docker-compose stop rabbit-3
+docker compose stop rabbit-3
 ```
+
+### Alternative: Automatic Cluster Formation
+`docker-compose.yml` forms the cluster with explicit `rabbitmqctl join_cluster`
+commands, which makes the steps visible. In production, nodes discover each
+other through **peer discovery** instead. `rabbitmq.conf` in this folder shows
+the classic config backend (a static list of nodes), quorum as the default
+queue type and balanced leader placement. To try it, mount it instead of
+`rabbitmq-minimal.conf` and remove the `command:` blocks of rabbit-2 and rabbit-3.
 
 ## Troubleshooting
 
@@ -174,25 +195,23 @@ docker exec rabbitmq-cluster-node-2 rabbitmqctl start_app
 ### Log Analysis
 ```bash
 # Check logs for clustering issues
-docker-compose logs rabbit-1 | grep -i cluster
-docker-compose logs rabbit-2 | grep -i error
+docker compose logs rabbit-1 | grep -i cluster
+docker compose logs rabbit-2 | grep -i error
 ```
 
 ## Cleanup
 ```bash
 # Stop cluster
-docker-compose down
+docker compose down
 
 # Remove volumes (optional)
-docker-compose down -v
+docker compose down -v
 
-# Clean up test files
-rm -f *.py
 ```
 
 ## Key Concepts
 - RabbitMQ clustering
-- High availability (HA) queues
+- Quorum queues (replicated, highly available)
 - Load balancing
 - Failover mechanisms
 - Cluster monitoring

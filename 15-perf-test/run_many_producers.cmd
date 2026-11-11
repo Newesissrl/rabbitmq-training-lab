@@ -4,6 +4,7 @@ echo 👥 RabbitMQ Many Producers Test
 echo ===============================
 
 docker network create rabbitmq_net 2>nul
+docker network connect rabbitmq_net rabbitmq 2>nul
 
 echo Running many producers test...
 echo Parameters:

@@ -1,4 +1,4 @@
-# Exercise 11: RabbitMQ Streams (RabbitMQ 4+ Only)
+# Exercise 11: RabbitMQ Streams
 
 ## Concept
 RabbitMQ Streams are append-only logs optimized for high-throughput scenarios:
@@ -8,8 +8,9 @@ RabbitMQ Streams are append-only logs optimized for high-throughput scenarios:
 - **High-throughput:** Optimized for millions of messages per second
 
 ## Prerequisites
-- **RabbitMQ 4.0+** (Streams not available in RabbitMQ 3)
-- **rstream library** (different from pika)
+- **RabbitMQ 4.3** with the `rabbitmq_stream` plugin enabled (the repository
+  `docker-compose.yml` enables it and publishes port 5552)
+- **rstream library** (different from pika, installed by `requirements.txt`)
 
 ## Learning Objectives
 - Understand streams vs traditional queues
@@ -28,41 +29,40 @@ RabbitMQ Streams are append-only logs optimized for high-throughput scenarios:
 | **Multiple Consumers** | Competing consumers | Independent offset tracking |
 | **Use Case** | Task distribution | Event sourcing, analytics |
 
-## Setup (RabbitMQ 4 Required)
+## Setup
 
-### 1. Start RabbitMQ 4 Container
+### 1. Start RabbitMQ with streams enabled
 ```bash
-# Must use RabbitMQ 4 - streams not available in v3
-docker run -d --name rabbitmq \
-  -p 5672:5672 \
-  -p 15672:15672 \
-  -p 5552:5552 \
-  rabbitmq:4-management
-
-# Enable streams plugin (should be enabled by default in v4)
-docker exec rabbitmq rabbitmq-plugins enable rabbitmq_stream
+# From the repository root (recommended): streams plugin + port 5552 included
+docker compose up -d
+```
+If you started RabbitMQ with plain `docker run` (see main README), make sure
+port 5552 is published and enable the plugin:
+```bash
+docker exec rabbitmq rabbitmq-plugins enable rabbitmq_stream rabbitmq_stream_management
 ```
 
 ### 2. Install Stream Dependencies
 ```bash
-pip install rstream
+pip install -r ../requirements.txt   # includes rstream
 ```
 
 ### 3. Run Exercise
 
-**Option A: Full Featured (may have connection issues on some systems):**
+**Option A: Full featured:**
 ```bash
-python producer.py   # Publishes events to stream
-python consumer.py   # Consumes from beginning
-python consumer.py --offset latest  # Consumes only new messages
-python consumer.py --filter error    # Server-side filtering for error events
-python consumer.py --filter payment  # Server-side filtering for payment events
+python producer.py                    # Terminal 1 - publishes an event every 2 s
+python consumer.py                    # Terminal 2 - replays from the first message
+python consumer.py --offset next      # Only messages published from now on
+python consumer.py --offset 5         # Start reading at offset 5
+python consumer.py --filter error     # Server-side filtering: error events only
+python consumer.py --filter payment   # Server-side filtering: payment events only
 ```
 
-**Option B: Simple Version (more compatible):**
+**Option B: Simple version:**
 ```bash
 python simple_producer.py   # Publishes 10 events then exits
-python simple_consumer.py   # Consumes from stream
+python simple_consumer.py   # Consumes from simple_stream
 ```
 
 ## Stream Features Demonstrated
@@ -77,21 +77,25 @@ python simple_consumer.py   # Consumes from stream
 - Multiple consumers can read independently
 - Replay from any point in history
 
-### 3. Time-Travel Queries
-- Read messages from specific timestamp
-- Replay events for debugging/analysis
-- Historical data always available
+### 3. Replay
+- Start from `first`, `last`, `next` or a specific numeric offset
+- Run several consumers with different offsets at the same time
+- Replay events for debugging/analysis (rstream also supports `OffsetType.TIMESTAMP`)
 
 ### 4. Server-Side Filtering
-- Filter messages at server level (not client)
-- Reduces network traffic and client processing
-- Efficient for selective consumption patterns
+- The producer attaches a *filter value* (the category) to each message
+- The broker only sends chunks that contain the requested value
+- The consumer also applies a predicate, because filtering is done per chunk
+- Reduces network traffic for selective consumers
 
 ## Web UI Monitoring
 Open http://localhost:15672 (guest/guest) and observe:
 
-**Streams Tab:** (New in RabbitMQ 4)
-- `events_stream` with message count
+**Queues and Streams Tab:**
+- `events_stream` with type `stream` and message count
+
+**Stream Connections Tab** (from `rabbitmq_stream_management`):
+- One connection per running producer/consumer
 - Stream size and retention policy
 - Consumer offset tracking
 
@@ -119,8 +123,8 @@ Open http://localhost:15672 (guest/guest) and observe:
 - Guaranteed message ordering
 
 ## Limitations & Considerations
-- **RabbitMQ 4+ Only:** Not available in RabbitMQ 3
-- **Different Protocol:** Uses Stream protocol, not AMQP
+- **Different Protocol:** Uses the Stream protocol (port 5552); streams can also be read over AMQP 0-9-1 with `x-stream-offset`
+- **Retention:** Messages are removed by retention policies (`x-max-age`, `x-max-length-bytes`), not by consumers
 - **Storage:** Streams consume more disk space
 - **Complexity:** More complex than traditional queues
 
@@ -128,17 +132,10 @@ Open http://localhost:15672 (guest/guest) and observe:
 
 **If you get connection errors:**
 1. **Use Simple Version:** Try `simple_producer.py` and `simple_consumer.py` first
-2. **Check RabbitMQ Version:** Ensure you're using RabbitMQ 4+
-3. **Verify Stream Plugin:** `docker exec rabbitmq rabbitmq-plugins list | grep stream`
-4. **Check Port:** `docker port rabbitmq 5552`
-5. **Test Connection:** `telnet 127.0.0.1 5552`
+2. **Verify Stream Plugin:** `docker exec rabbitmq rabbitmq-plugins list | grep stream`
+3. **Check Port:** `docker port rabbitmq 5552`
+4. **Test Connection:** `nc -vz 127.0.0.1 5552`
 
 **Common Issues:**
-- **DNS Resolution:** The simple versions use IP addresses to avoid hostname issues
-- **Connection Pooling:** The simple versions avoid complex connection management
-- **API Compatibility:** The simple versions use basic rstream API calls
-
-## Note
-This exercise requires RabbitMQ 4 and demonstrates advanced streaming concepts. If you're using RabbitMQ 3, skip this exercise and focus on the traditional AMQP patterns in exercises 1-10.
-
-If the full-featured versions don't work due to connection issues, use the simple versions which are more compatible across different environments.
+- **Host name resolution:** The scripts use `load_balancer_mode=True` so the client keeps using `127.0.0.1` instead of the host name advertised by the broker
+- **Filter shows nothing:** Messages published before the filter value extractor existed have no filter value. Delete the stream (`docker exec rabbitmq rabbitmqctl delete_queue events_stream`) and run the producer again

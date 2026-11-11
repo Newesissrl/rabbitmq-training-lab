@@ -8,7 +8,7 @@ from rstream.superstream import SuperStreamCreationOption
 from rstream._pyamqp.message import Properties
 
 # =============================================================================
-# RABBITMQ SUPER STREAMS PRODUCER (RABBITMQ 4+ REQUIRED)
+# RABBITMQ SUPER STREAMS PRODUCER (RABBITMQ 4.3)
 # =============================================================================
 # This producer uses the high-level SuperStreamProducer client from the rstream
 # library to publish messages to a partitioned super stream.
@@ -25,7 +25,7 @@ async def routing_extractor(message: AMQPMessage):
     return message.application_properties['routing_key']
 
 async def main():
-    print(' [*] RabbitMQ Super Streams Producer (RabbitMQ 4+ required)')
+    print(' [*] RabbitMQ Super Streams Producer')
     print(' [*] Publishing to partitioned super stream every 2 seconds')
     print(' [*] Messages routed by customer_id to ensure ordering per customer')
     print(' [*] To exit press CTRL+C')
@@ -106,7 +106,7 @@ async def main():
     except Exception as e:
         print(f' [❌] Error: {e}')
         print(' [!] Troubleshooting steps:')
-        print(' [!] 1. Verify RabbitMQ 4+ is running: docker ps')
+        print(' [!] 1. Verify RabbitMQ is running: docker ps')
         print(' [!] 2. Check stream plugin: docker exec rabbitmq rabbitmq-plugins list | grep stream')
         print(' [!] 3. Check rstream version: pip show rstream')
         print(' [!] 4. Verify port 5552 is exposed: docker port rabbitmq')

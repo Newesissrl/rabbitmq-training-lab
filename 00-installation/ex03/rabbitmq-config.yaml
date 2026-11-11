@@ -1,93 +1,27 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: custom-rabbitmq-config
-  namespace: default
-data:
-  rabbitmq.conf: |
-    # Custom RabbitMQ Configuration for Kubernetes
-    
-    # Logging
-    log.console = true
-    log.console.level = info
-    log.file = false
-    
-    # Network
-    listeners.tcp.default = 5672
-    management.tcp.port = 15672
-    management.tcp.ip = 0.0.0.0
-    
-    # Memory and Disk (optimized for Killercoda)
-    vm_memory_high_watermark.relative = 0.7
-    disk_free_limit.relative = 1.0
-    
-    # Cluster formation for Kubernetes
-    cluster_formation.peer_discovery_backend = k8s
-    cluster_formation.k8s.host = kubernetes.default.svc.cluster.local
-    cluster_formation.k8s.address_type = hostname
-    cluster_formation.node_cleanup.interval = 30
-    cluster_formation.node_cleanup.only_log_warning = true
-    
-    # Cluster partition handling
-    cluster_partition_handling = autoheal
-    
-    # Queue settings
-    queue_master_locator = min-masters
-    
-    # Default user settings (will be overridden by operator)
-    default_vhost = /
-    default_user_tags.administrator = true
-    default_permissions.configure = .*
-    default_permissions.read = .*
-    default_permissions.write = .*
-    
-    # High availability
-    ha_promote_on_shutdown = when_synced
-    ha_promote_on_failure = when_synced
-    
-    # Performance tuning for small environments
-    channel_max = 2047
-    connection_max = 1000
-    heartbeat = 60
-    
-    # Management UI settings
-    management.rates_mode = basic
-    
-  enabled_plugins: |
-    [rabbitmq_management,
-     rabbitmq_peer_discovery_k8s,
-     rabbitmq_prometheus].
+# Merge patch for the RabbitmqCluster "rabbitmq-cluster".
+# Apply with:
+#   kubectl patch rabbitmqcluster rabbitmq-cluster --type merge --patch-file rabbitmq-config.yaml
+#
+# spec.rabbitmq.additionalConfig is plain rabbitmq.conf content: the operator
+# appends it to the configuration it generates (peer discovery, default user,
+# plugins...) and performs a rolling restart of the pods.
+spec:
+  rabbitmq:
+    additionalConfig: |
+      # Logging
+      log.console.level = info
 
----
-# RBAC for RabbitMQ peer discovery
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: rabbitmq-cluster
-  namespace: default
+      # Spread new queue leaders evenly across the nodes
+      queue_leader_locator = balanced
 
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: rabbitmq-cluster
-  namespace: default
-rules:
-- apiGroups: [""]
-  resources: ["endpoints"]
-  verbs: ["get", "list", "watch"]
+      # Make quorum the default queue type: queues declared without
+      # x-queue-type become replicated quorum queues
+      default_queue_type = quorum
 
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: rabbitmq-cluster
-  namespace: default
-subjects:
-- kind: ServiceAccount
-  name: rabbitmq-cluster
-  namespace: default
-roleRef:
-  kind: Role
-  name: rabbitmq-cluster
-  apiGroup: rbac.authorization.k8s.io
+      # Limits for a small environment
+      channel_max = 2047
+      connection_max = 1000
+      heartbeat = 60
+
+      # Management UI: basic message rates only
+      management.rates_mode = basic

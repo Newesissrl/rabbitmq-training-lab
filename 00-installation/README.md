@@ -41,9 +41,11 @@ After completing these exercises, you will understand:
 - Ports 5671-5674, 15672-15674, 8080 available
 
 #### Exercise 3 (Kubernetes)
-- Kubernetes cluster (local or Killercoda)
+- Kubernetes cluster (local, e.g. kind/minikube, or the Killercoda Kubernetes playground)
 - kubectl configured
 - Basic Kubernetes knowledge
+
+All exercises use **RabbitMQ 4.3**.
 
 ## 🚀 Quick Start
 
@@ -58,7 +60,7 @@ cd ex01
 **🏗️ Need a production-like cluster?**
 ```bash
 cd ex02
-docker-compose up -d
+docker compose up -d
 python test_cluster.py
 ```
 
@@ -90,13 +92,13 @@ cd ex03
 
 ### Exercise 2: Clustering
 - Multi-node cluster formation
-- High availability configuration
+- Quorum queues for high availability
 - Load balancer setup
 - Failover testing
 - Performance monitoring
 
 ### Exercise 3: Production
-- Kubernetes operator usage
+- Kubernetes operator usage (with cert-manager)
 - Custom resource definitions
 - Persistent storage
 - Service discovery
@@ -185,7 +187,8 @@ curl http://localhost:15672
 
 ## 🎯 Next Steps
 
-After completing the installation exercises, proceed to:
-- [01-basics](../01-basics/) - Fundamental RabbitMQ concepts
-- [02-direct-exchange](../02-direct-exchange/) - Message routing patterns
-- [03-fanout-exchange](../03-fanout-exchange/) - Broadcasting patterns
+After completing the installation exercises, start RabbitMQ from the repository
+root (`docker compose up -d`) and proceed to:
+- [01-direct](../01-direct/) - Point-to-point routing with a direct exchange
+- [02-fanout](../02-fanout/) - Broadcasting patterns
+- [03-topic](../03-topic/) - Pattern-based routing

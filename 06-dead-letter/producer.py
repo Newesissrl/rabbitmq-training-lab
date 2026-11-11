@@ -17,7 +17,7 @@ channel = connection.channel()
 channel.exchange_declare(exchange='dlx', exchange_type='direct')
 
 # Declare dead letter queue to collect failed messages
-channel.queue_declare(queue='dead_letters')
+channel.queue_declare(queue='dead_letters', durable=True)
 # Bind dead letter queue to DLX with routing key 'failed'
 channel.queue_bind(exchange='dlx', queue='dead_letters', routing_key='failed')
 
@@ -27,6 +27,7 @@ channel.queue_bind(exchange='dlx', queue='dead_letters', routing_key='failed')
 # Declare main processing queue with dead letter exchange configuration
 channel.queue_declare(
     queue='main_queue',
+    durable=True,  # RabbitMQ 4.3: named shared queues must be durable
     arguments={
         'x-dead-letter-exchange': 'dlx',        # Send failed messages to DLX
         'x-dead-letter-routing-key': 'failed',  # Routing key for dead letters
